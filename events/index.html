@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>VM Financial Solutions | Events</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="../assets/css/custom.css" />
+  <script src="../assets/js/notifications.js"></script>
+  <style>
+    /* small niceties */
+    .pill { padding: .25rem .5rem; border-radius: .5rem; font-size: .75rem; }
+    #alert { max-width: 1100px; margin: 0 auto; }
+    .clickable { cursor: pointer; }
+  </style>
+</head>
+<body class="h-full bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+  <div id="backdrop" class="fixed inset-0 bg-black/40 opacity-0 pointer-events-none lg:hidden"></div>
+
+  <aside id="sidebar" class="fixed top-0 left-0 z-40 h-full w-72 bg-white border-r border-gray-200 dark:bg-gray-800 dark:border-gray-700">
+    <div class="flex items-center gap-3 px-5 h-16 border-b border-gray-200 dark:border-gray-700">
+      <div class="size-9 rounded-lg bg-emerald-600"></div>
+      <div class="font-semibold">VM Financial Solutions</div>
+    </div>
+    <nav class="p-3">
+      <a href="../index.html" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+        <span>🏠</span><span>Dashboard</span>
+      </a>
+      <a href="./" class="flex items-center gap-3 px-3 py-2 rounded-lg mt-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+        <span>📅</span><span>Events</span>
+      </a>
+      <a href="../gallery/" class="flex items-center gap-3 px-3 py-2 rounded-lg mt-1 hover:bg-gray-100 dark:hover:bg-gray-700">
+        <span>🖼️</span><span>Gallery</span>
+      </a>
+      <a href="../blogs/" class="flex items-center gap-3 px-3 py-2 rounded-lg mt-1 hover:bg-gray-100 dark:hover:bg-gray-700">
+        <span>📝</span><span>Blogs</span>
+      </a>
+    </nav>
+  </aside>
+
+  <div class="lg:pl-72 min-h-full">
+    <header class="sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-gray-200 dark:bg-gray-800/80 dark:border-gray-700">
+      <div class="h-16 px-4 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <button class="lg:hidden p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700" data-toggle="sidebar">☰</button>
+          <h1 class="text-lg font-semibold">Events</h1>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700" data-toggle="theme">🌓</button>
+          <a id="newEventBtn" href="./AddEvents.html" class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">+ New Event</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="p-6 space-y-6" data-api-base="http://localhost:3000/api">
+      <!-- alert -->
+      <div id="alert" class="hidden rounded-lg p-3 text-sm mx-auto"></div>
+
+      <!-- Toolbar -->
+      <div class="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+        <input id="search" type="text" placeholder="Search events…" class="w-full sm:w-80 px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:bg-gray-800 dark:border-gray-700" />
+        <div class="text-sm text-gray-500">Showing <b id="count">0</b> events</div>
+      </div>
+
+      <div id="tableWrap" class="overflow-x-auto rounded-xl border border-gray-200 bg-white dark:bg-gray-800 dark:border-gray-700">
+        <table id="events-table" class="min-w-full text-sm">
+          <thead class="bg-gray-50 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+            <tr>
+              <th class="px-4 py-3 text-left font-medium">Title</th>
+              <th class="px-4 py-3 text-left font-medium">Date</th>
+              <th class="px-4 py-3 text-left font-medium">Status</th>
+              <th class="px-4 py-3 text-left font-medium">Host</th>
+              <th class="px-4 py-3 text-right font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tbody" class="divide-y divide-gray-200 dark:divide-gray-700">
+            <!-- rows will be injected -->
+          </tbody>
+        </table>
+
+        <div id="empty" class="hidden p-10 text-center text-gray-500 dark:text-gray-400">
+          No events found. Click <b>+ New Event</b> to create one.
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // small base UI toggles (theme/sidebar)
+    (function baseUI(){
+      document.querySelectorAll('[data-toggle="sidebar"]').forEach(btn=>{
+        btn.addEventListener('click', ()=> document.documentElement.classList.toggle('sidebar-open'));
+      });
+      const themeBtn = document.querySelector('[data-toggle="theme"]');
+      const setTheme = t => { document.documentElement.classList.toggle('dark', t === 'dark'); localStorage.setItem('theme', t); };
+      if (themeBtn) themeBtn.addEventListener('click', ()=> setTheme(document.documentElement.classList.contains('dark') ? 'light' : 'dark'));
+      const stored = localStorage.getItem('theme'); if (stored) setTheme(stored);
+    })();
+
+    (function eventsList(){
+      const apiBase = document.querySelector('main').getAttribute('data-api-base').replace(/\/$/, '');
+      const LIST_URL = apiBase + '/events?page=1&per=200'; // expects GET /events
+      const DELETE_URL = id => apiBase + '/events/' + encodeURIComponent(id); // expects DELETE /events/:id
+      const VIEW_PAGE = id => './view.html?id=' + encodeURIComponent(id);
+      const EDIT_PAGE = id => './edit.html?id=' + encodeURIComponent(id);
+
+      const tbody = document.getElementById('tbody');
+      const empty = document.getElementById('empty');
+      const countEl = document.getElementById('count');
+      const search = document.getElementById('search');
+      const alertBox = document.getElementById('alert');
+
+      let items = [];
+      let filtered = [];
+
+      function showAlert(msg, type='info', persist=2500){
+        alertBox.className = 'rounded-lg p-3 text-sm mx-auto ' + (type==='error' ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-100');
+        alertBox.textContent = msg;
+        alertBox.classList.remove('hidden');
+        if (persist) setTimeout(()=> alertBox.classList.add('hidden'), persist);
+      }
+
+      function timeFmt(s){
+        if (!s) return '';
+        try {
+          const d = new Date(String(s).replace(' ', 'T'));
+          return d.toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' });
+        } catch(e) { return String(s); }
+      }
+
+      function render(){
+        tbody.innerHTML = '';
+        if (!filtered.length){
+          empty.classList.remove('hidden');
+          countEl.textContent = '0';
+          return;
+        }
+        empty.classList.add('hidden');
+        countEl.textContent = String(filtered.length);
+
+        for (const e of filtered){
+          const tr = document.createElement('tr');
+
+          // Title
+          const tTd = document.createElement('td');
+          tTd.className = 'px-4 py-3';
+          const title = document.createElement('div');
+          title.className = 'font-medium truncate';
+          title.textContent = e.title || `Event ${e.id}`;
+          const desc = document.createElement('div');
+          desc.className = 'text-xs text-gray-500';
+          desc.textContent = (e.address || '') ? (e.address.length > 80 ? e.address.slice(0,80) + '…' : e.address) : '';
+          tTd.appendChild(title); tTd.appendChild(desc);
+
+          // Date
+          const dateTd = document.createElement('td');
+          dateTd.className = 'px-4 py-3';
+          dateTd.textContent = e.event_date ? timeFmt(e.event_date) : '—';
+
+          // Status
+          const statusTd = document.createElement('td');
+          statusTd.className = 'px-4 py-3';
+          const statusSpan = document.createElement('span');
+          statusSpan.className = 'pill';
+          if (e.status === 1 || e.status === '1' || e.status === true) {
+            statusSpan.classList.add('bg-emerald-100','text-emerald-700','dark:bg-emerald-900/30','dark:text-emerald-300');
+            statusSpan.textContent = 'Scheduled';
+          } else if (e.status === 'archived' || e.status === 'archived' || e.status === -1) {
+            statusSpan.classList.add('bg-gray-200','text-gray-700','dark:bg-gray-700','dark:text-gray-300');
+            statusSpan.textContent = 'Archived';
+          } else {
+            statusSpan.classList.add('bg-amber-100','text-amber-700','dark:bg-amber-900/30','dark:text-amber-300');
+            statusSpan.textContent = 'Draft';
+          }
+          statusTd.appendChild(statusSpan);
+
+          // Host
+          const hostTd = document.createElement('td');
+          hostTd.className = 'px-4 py-3';
+          hostTd.textContent = e.hosted_by || '—';
+
+          // Actions
+          const actTd = document.createElement('td');
+          actTd.className = 'px-4 py-3';
+          const wrap = document.createElement('div');
+          wrap.className = 'flex items-center gap-1 justify-end';
+
+          const viewBtn = document.createElement('button');
+          viewBtn.className = 'px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700';
+          viewBtn.textContent = 'View';
+          viewBtn.addEventListener('click', ()=> { location.href = VIEW_PAGE(e.id); });
+
+          const editBtn = document.createElement('button');
+          editBtn.className = 'px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700';
+          editBtn.textContent = 'Edit';
+          editBtn.addEventListener('click', ()=> { location.href = EDIT_PAGE(e.id); });
+
+          const delBtn = document.createElement('button');
+          delBtn.className = 'px-2 py-1 rounded-md text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20';
+          delBtn.textContent = 'Delete';
+          delBtn.addEventListener('click', async ()=>{
+            const ok = confirm(`Delete event "${e.title || e.id}"? This cannot be undone.`);
+            if (!ok) return;
+            const restoreBtn = window.Notify?.showButtonLoading(delBtn, 'Deleting...') || (() => {});
+            try {
+              const res = await fetch(DELETE_URL(e.id), { method: 'DELETE', credentials: 'include' });
+              const json = await res.json().catch(()=>null);
+              if (!res.ok) throw new Error((json && (json.error || json.message)) || `Delete failed (${res.status})`);
+              items = items.filter(x => x.id !== e.id);
+              filtered = filtered.filter(x => x.id !== e.id);
+              render();
+              window.Notify?.success('Event deleted successfully', 3000);
+              showAlert('Event deleted', 'info');
+            } catch (err){
+              console.error('Delete error', err);
+              window.Notify?.error(err.message || 'Failed to delete event', 5000);
+              showAlert(err.message || 'Delete failed', 'error');
+            } finally {
+              restoreBtn();
+            }
+          });
+
+          wrap.appendChild(viewBtn);
+          wrap.appendChild(editBtn);
+          wrap.appendChild(delBtn);
+          actTd.appendChild(wrap);
+
+          tr.appendChild(tTd);
+          tr.appendChild(dateTd);
+          tr.appendChild(statusTd);
+          tr.appendChild(hostTd);
+          tr.appendChild(actTd);
+          tbody.appendChild(tr);
+        }
+      }
+
+      // filter logic
+      function doFilter(){
+        const q = (search.value || '').trim().toLowerCase();
+        filtered = !q ? [...items] : items.filter(e =>
+          String(e.title || '').toLowerCase().includes(q) ||
+          String(e.description || '').toLowerCase().includes(q) ||
+          String(e.hosted_by || '').toLowerCase().includes(q)
+        );
+        render();
+      }
+
+      // load list
+      async function load(){
+        window.Notify?.showLoading('Loading events...');
+        try {
+          const res = await fetch(LIST_URL, { credentials: 'include' });
+          const json = await res.json().catch(()=>null);
+          if (!res.ok) {
+            throw new Error((json && (json.error || json.message)) || `Failed (${res.status})`);
+          }
+
+          // Accept common shapes: { data: rows } or { items: rows } or top-level array
+          const list = Array.isArray(json.data) ? json.data : (Array.isArray(json.items) ? json.items : (Array.isArray(json) ? json : []));
+          items = list.map(r => ({
+            id: Number(r.id),
+            title: r.title || '',
+            description: r.description || r.desc || '',
+            event_date: r.event_date || r.date || r.created_at || null,
+            status: r.status ?? r.is_published ?? 0,
+            hosted_by: r.hosted_by || r.host || '',
+            address: r.address || '',
+            created_at: r.created_at ?? r.inserted_at,
+            updated_at: r.updated_at ?? r.updated_at
+          }));
+          filtered = [...items];
+          render();
+          window.Notify?.hideLoading();
+          if (items.length > 0) {
+            window.Notify?.success(`Loaded ${items.length} event${items.length === 1 ? '' : 's'}`, 2000);
+          }
+        } catch (err) {
+          console.error('Load error', err);
+          items = []; filtered = [];
+          render();
+          window.Notify?.hideLoading();
+          window.Notify?.error(err.message || 'Failed to load events', 5000);
+          showAlert(err.message || 'Failed to load events', 'error');
+        }
+      }
+
+      search.addEventListener('input', doFilter);
+
+      // initial load
+      load();
+    })();
+  </script>
+</body>
+</html>
